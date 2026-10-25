@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+env/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Sensitive & Environment
+.env
+.env.local
+private/
+
+# Large Handout Data (Explicitly permitted to exclude per BRIEF.md:53-54)
+seed/seed.sql
+logs/*.tar.gz
+logs/extracted/
+dc-briefing.mp3
+
+# IDE & OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
