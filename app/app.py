@@ -17,6 +17,7 @@ from datetime import datetime, date, timedelta
 
 import requests
 import psycopg2
+from psycopg2 import pool
 import werkzeug
 if not hasattr(werkzeug, "__version__"):
     import importlib.metadata
@@ -75,14 +76,78 @@ except Exception:
     pass
 
 
+db_pool = None
+
+
+def get_db_pool():
+    global db_pool
+    if db_pool is None:
+        host = os.environ.get("DB_HOST", config.get("database", "host", fallback="db"))
+        port = int(os.environ.get("DB_PORT", config.get("database", "port", fallback="5432")))
+        dbname = os.environ.get("DB_NAME", config.get("database", "name", fallback="sewasetu"))
+        user = os.environ.get("DB_USER", config.get("database", "user", fallback="sewasetu"))
+        password = os.environ.get("DB_PASSWORD", config.get("database", "password", fallback="sewasetu123"))
+        try:
+            db_pool = pool.ThreadedConnectionPool(
+                minconn=2,
+                maxconn=20,
+                host=host,
+                port=port,
+                dbname=dbname,
+                user=user,
+                password=password,
+            )
+        except Exception as e:
+            app.logger.warning("Could not initialize connection pool immediately: %s" % e)
+    return db_pool
+
+
+class PooledConnectionWrapper:
+    """Wraps a pooled psycopg2 connection so calling close() returns it to the pool."""
+    def __init__(self, conn, pool_instance):
+        self._conn = conn
+        self._pool = pool_instance
+        self._closed = False
+
+    def cursor(self, *args, **kwargs):
+        return self._conn.cursor(*args, **kwargs)
+
+    def commit(self):
+        return self._conn.commit()
+
+    def rollback(self):
+        return self._conn.rollback()
+
+    def close(self):
+        if not self._closed:
+            self._closed = True
+            if self._pool:
+                try:
+                    self._pool.putconn(self._conn)
+                except Exception:
+                    self._conn.close()
+            else:
+                self._conn.close()
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+
 def get_db():
-    return psycopg2.connect(
-        host=config.get("database", "host"),
-        port=config.get("database", "port"),
-        dbname=config.get("database", "name"),
-        user=config.get("database", "user"),
-        password=config.get("database", "password"),
-    )
+    p = get_db_pool()
+    if p:
+        try:
+            raw_conn = p.getconn()
+            return PooledConnectionWrapper(raw_conn, p)
+        except Exception:
+            pass
+    # Fallback to direct connection if pool offline or exhausted
+    host = os.environ.get("DB_HOST", config.get("database", "host", fallback="db"))
+    port = int(os.environ.get("DB_PORT", config.get("database", "port", fallback="5432")))
+    dbname = os.environ.get("DB_NAME", config.get("database", "name", fallback="sewasetu"))
+    user = os.environ.get("DB_USER", config.get("database", "user", fallback="sewasetu"))
+    password = os.environ.get("DB_PASSWORD", config.get("database", "password", fallback="sewasetu123"))
+    return psycopg2.connect(host=host, port=port, dbname=dbname, user=user, password=password)
 
 
 def sanitize(value, maxlen=100):
