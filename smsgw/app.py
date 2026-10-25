@@ -7,8 +7,14 @@ web console at / once "delivered", after a short carrier latency.
 import random
 import time
 from flask import Flask, request, jsonify, render_template_string
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+@app.route("/health")
+def health():
+    return jsonify({"status": "healthy", "service": "purvsms-gateway", "timestamp": time.time()}), 200
 
 MESSAGES = []  # {id, to, text, sent_at, delivery_at}
 

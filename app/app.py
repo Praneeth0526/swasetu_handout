@@ -35,7 +35,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 config = configparser.ConfigParser()
 config.read(os.path.join(BASE_DIR, "config", "app.ini"))
 
+from werkzeug.middleware.proxy_fix import ProxyFix
+
 app = Flask(__name__)
+# Support path-prefixes and reverse-proxy headers (e.g. Caddy, Hugging Face Spaces)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", config.get("app", "secret_key", fallback="ssp-prod-key-2023-donotshare"))
 app.config["PERMANENT_SESSION_LIFETIME"] = 300
 
@@ -43,6 +48,29 @@ ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "sewasetu@123")
 ASSESSOR_USERNAME = os.environ.get("ASSESSOR_USERNAME", "assessor_admin")
 ASSESSOR_PASSWORD = os.environ.get("ASSESSOR_PASSWORD", "Purvanchal@Assess2027")
+
+
+@app.route("/health")
+def health():
+    db_ok = False
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("SELECT 1")
+        cur.fetchone()
+        cur.close()
+        conn.close()
+        db_ok = True
+    except Exception as e:
+        app.logger.warning("Health check db error: %s" % e)
+        db_ok = False
+    status_code = 200 if db_ok else 503
+    return jsonify({
+        "status": "healthy" if db_ok else "unhealthy",
+        "service": "sewasetu-portal",
+        "database": "connected" if db_ok else "disconnected",
+        "timestamp": datetime.now().isoformat()
+    }), status_code
 
 SMS_GATEWAY_URL = os.environ.get("SMS_GATEWAY_URL", config.get("app", "sms_gateway_url", fallback="http://smsgw:8025"))
 OTP_VALIDITY_SECONDS = int(os.environ.get("OTP_VALIDITY_SECONDS", config.getint("app", "otp_validity_seconds", fallback=300)))

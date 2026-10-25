@@ -14,6 +14,8 @@ htmlcov/
 .env
 .env.local
 private/
+uploads/
+app/uploads/
 
 # Large Handout Data (Explicitly permitted to exclude per BRIEF.md:53-54)
 seed/seed.sql
