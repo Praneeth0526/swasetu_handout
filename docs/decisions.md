@@ -51,3 +51,15 @@ This log records major engineering decisions, trade-offs, and rationale for the 
     4. **Hostile / Ambiguous Inputs**: Incomplete documents, contradictory data, handling missing fields.
     5. **Rate Limiting & Abuse Defense**: Rapid-fire queries, brute-force attempts.
   - The eval runner outputs structured JSON execution traces and metrics rendered on a standalone, public dashboard (`/evals/` or dedicated port).
+
+---
+
+## ADR-005: Dual-Track Deployment Topology (Compose + Caddy & Fallback Single Container)
+
+* **Date:** 2026-10-25
+* **Context:** The live deployment must remain accessible for ~30 days. The target hosting includes Hugging Face Spaces (which runs Docker spaces on port 7860 as a single container) or a multi-container VPS setup.
+* **Decision:**
+  - Build a dual deployment structure:
+    1. **Multi-Container Production (`deploy/`)**: Docker Compose orchestrating `app` (Flask), `db` (Postgres 15), `smsgw` (SMS gateway), `worker` (RTPS job), and `caddy` (automatic HTTPS, reverse proxy, routing to `/`, `/__gateway/`, `/mcp/citizen`, `/mcp/admin`, `/evals/`).
+    2. **Single-Container Fallback (`Dockerfile.fallback`)**: Self-contained image running Postgres, Flask app, SMS gateway, worker, and MCP/evals under a unified entrypoint on port 7860 with seed-at-boot. Tailor-made for Hugging Face Spaces free-tier hosting.
+  - Added Werkzeug `ProxyFix` middleware and `/health` endpoints on all services for reverse proxy transparent path-prefixing (`X-Forwarded-Prefix`, `X-Forwarded-Proto`).
