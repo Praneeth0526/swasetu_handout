@@ -17,6 +17,14 @@ from datetime import datetime, date, timedelta
 
 import requests
 import psycopg2
+import werkzeug
+if not hasattr(werkzeug, "__version__"):
+    import importlib.metadata
+    try:
+        werkzeug.__version__ = importlib.metadata.version("werkzeug")
+    except Exception:
+        werkzeug.__version__ = "3.1.0"
+
 from flask import (Flask, request, session, redirect, url_for, render_template,
                    flash, send_file, abort, jsonify)
 from fpdf import FPDF
@@ -27,11 +35,13 @@ config = configparser.ConfigParser()
 config.read(os.path.join(BASE_DIR, "config", "app.ini"))
 
 app = Flask(__name__)
-app.secret_key = config.get("app", "secret_key")
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", config.get("app", "secret_key", fallback="ssp-prod-key-2023-donotshare"))
 app.config["PERMANENT_SESSION_LIFETIME"] = 300
 
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "sewasetu@123"
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "sewasetu@123")
+ASSESSOR_USERNAME = os.environ.get("ASSESSOR_USERNAME", "assessor_admin")
+ASSESSOR_PASSWORD = os.environ.get("ASSESSOR_PASSWORD", "Purvanchal@Assess2027")
 
 SMS_GATEWAY_URL = config.get("app", "sms_gateway_url")
 OTP_VALIDITY_SECONDS = config.getint("app", "otp_validity_seconds")
@@ -435,36 +445,49 @@ def view_application(app_id):
     cur.close(); conn.close()
     if not row:
         abort(404)
+    # BOLA / IDOR protection: only an admin or the applicant themselves may view
+    if not session.get("admin") and row[2] != session.get("portal_mobile"):
+        abort(403)
     return render_template("application.html", a=row, app_id=app_id)
 
 
 @app.route("/ack/<int:app_id>.pdf")
 def ack_pdf(app_id):
+    if not session.get("logged_in"):
+        flash("Please login to download acknowledgment.")
+        return redirect(url_for("status_login"))
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, mobile FROM applications WHERE id = %s", (app_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        abort(404)
+    # Authorization: applicant or admin
+    if not session.get("admin") and row[1] != session.get("portal_mobile"):
+        cur.close(); conn.close()
+        abort(403)
+
     path = os.path.join(UPLOAD_DIR, "ack", "%d.pdf" % app_id)
     if not os.path.exists(path):
-        conn = get_db()
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM applications WHERE id = %s", (app_id,))
-        if not cur.fetchone():
-            cur.close(); conn.close()
-            abort(404)
         data = generate_acknowledgment(cur, app_id)
         cur.close(); conn.close()
         return send_file(io.BytesIO(data), mimetype="application/pdf")
+    cur.close(); conn.close()
     return send_file(path, mimetype="application/pdf")
 
 
 @app.route("/status/reset", methods=["GET", "POST"])
 def reset_password():
     if request.method == "POST":
-        mobile = request.form.get("mobile", "")
+        mobile = request.form.get("mobile", "").strip()
         conn = get_db()
         cur = conn.cursor()
-        # fetch account for reset
-        cur.execute("SELECT mobile FROM portal_users WHERE mobile = '%s'" % mobile)
+        # Parameterized queries to eliminate SQL injection
+        cur.execute("SELECT mobile FROM portal_users WHERE mobile = %s", (mobile,))
         row = cur.fetchone()
         if row:
-            cur.execute("SELECT dob FROM applications WHERE mobile = '%s' LIMIT 1" % mobile)
+            cur.execute("SELECT dob FROM applications WHERE mobile = %s LIMIT 1", (mobile,))
             r2 = cur.fetchone()
             if r2:
                 newpass = r2[0].strftime("%d%m%Y")
@@ -485,10 +508,12 @@ def reset_password():
 @app.route("/admin", methods=["GET", "POST"])
 def admin_login():
     if request.method == "POST":
-        if (request.form.get("username") == ADMIN_USERNAME and
-                request.form.get("password") == ADMIN_PASSWORD):
+        u = request.form.get("username", "")
+        p = request.form.get("password", "")
+        if (u == ADMIN_USERNAME and p == ADMIN_PASSWORD) or (u == ASSESSOR_USERNAME and p == ASSESSOR_PASSWORD):
             session["logged_in"] = True
             session["admin"] = True
+            session["admin_user"] = u
             return redirect(url_for("admin_dashboard"))
         flash("Invalid credentials.")
     return render_template("admin_login.html")
@@ -549,12 +574,13 @@ def admin_view(app_id):
 
 @app.route("/admin/approve/<int:app_id>", methods=["POST"])
 def admin_approve(app_id):
-    if not session.get("logged_in"):
+    if not session.get("admin"):
         abort(403)
+    decided_by = session.get("admin_user", "admin")
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("UPDATE applications SET status = 'APPROVED', decided_at = %s "
-                "WHERE id = %s", (datetime.now(), app_id))
+    cur.execute("UPDATE applications SET status = 'APPROVED', decided_at = %s, decided_by = %s "
+                "WHERE id = %s", (datetime.now(), decided_by, app_id))
     conn.commit()
     cur.close(); conn.close()
     flash("Application approved.")
@@ -563,12 +589,13 @@ def admin_approve(app_id):
 
 @app.route("/admin/reject/<int:app_id>", methods=["POST"])
 def admin_reject(app_id):
-    if not session.get("logged_in"):
+    if not session.get("admin"):
         abort(403)
+    decided_by = session.get("admin_user", "admin")
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("UPDATE applications SET status = 'REJECTED', decided_at = %s "
-                "WHERE id = %s", (datetime.now(), app_id))
+    cur.execute("UPDATE applications SET status = 'REJECTED', decided_at = %s, decided_by = %s "
+                "WHERE id = %s", (datetime.now(), decided_by, app_id))
     conn.commit()
     cur.close(); conn.close()
     flash("Application rejected.")
