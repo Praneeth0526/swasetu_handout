@@ -740,7 +740,15 @@ except ImportError:
 
 app.register_blueprint(mcp_bp)
 
+try:
+    from evals.routes import evals_bp
+except ImportError:
+    from app.evals.routes import evals_bp
+
+app.register_blueprint(evals_bp)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8000, debug=False)
+
 
