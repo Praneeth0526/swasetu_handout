@@ -1,0 +1,3 @@
+# Sewa Setu scheduled jobs - Nightly RTPS Deemed Approval Sweep
+PATH=/usr/local/bin:/usr/bin:/bin
+0 2 * * * cd /app && python -m worker --run-once >> /var/log/sewasetu/cron.log 2>&1

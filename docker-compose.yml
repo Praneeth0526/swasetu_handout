@@ -1,42 +1,109 @@
+version: "3.8"
+
 services:
   db:
-    image: postgres:15
+    image: postgres:15-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: sewasetu
-      POSTGRES_USER: sewasetu
-      POSTGRES_PASSWORD: sewasetu123
+      POSTGRES_DB: ${DB_NAME:-sewasetu}
+      POSTGRES_USER: ${DB_USER:-sewasetu}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-sewasetu123}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./app/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
-      - ./seed/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+      - ./app/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./deploy/init-db.sh:/docker-entrypoint-initdb.d/02-init-db.sh:ro
+      - ./seed:/seed:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-sewasetu} -d ${DB_NAME:-sewasetu}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   app:
-    build: ./app
-    ports:
-      - "8000:8000"
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-sewasetu}
+      DB_USER: ${DB_USER:-sewasetu}
+      DB_PASSWORD: ${DB_PASSWORD:-sewasetu123}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-sewasetu@123}
+      ASSESSOR_USERNAME: ${ASSESSOR_USERNAME:-assessor_admin}
+      ASSESSOR_PASSWORD: ${ASSESSOR_PASSWORD:-Purvanchal@Assess2027}
+      ADMIN_BEARER_TOKEN: ${ADMIN_BEARER_TOKEN:-Purvanchal@Assess2027}
+      SMS_GATEWAY_URL: http://smsgw:8025
+      FLASK_SECRET_KEY: ${FLASK_SECRET_KEY:-ssp-prod-secret-key-2027}
     depends_on:
-      - db
-      - smsgw
+      db:
+        condition: service_healthy
+      smsgw:
+        condition: service_healthy
     volumes:
       - uploads:/var/sewasetu/uploads
       - applogs:/var/log/sewasetu
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
-  scheduler:
-    build: ./app
-    command: ["cron", "-f"]
+  smsgw:
+    build:
+      context: ./smsgw
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8025"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8025/health')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  worker:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ["python", "-m", "worker", "--interval", "3600"]
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-sewasetu}
+      DB_USER: ${DB_USER:-sewasetu}
+      DB_PASSWORD: ${DB_PASSWORD:-sewasetu123}
+      SMS_GATEWAY_URL: http://smsgw:8025
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      app:
+        condition: service_healthy
     volumes:
       - applogs:/var/log/sewasetu
 
-  smsgw:
-    build: ./smsgw
-    # internal only — reached by the app over the docker network and exposed to
-    # users via the app at /__gateway/ (so no second host port is needed)
-    expose:
-      - "8025"
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "${PORT:-80}:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
 
 volumes:
   pgdata:
   uploads:
   applogs:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,49 @@
+{
+    admin off
+}
+
+:80, :7860 {
+    # Essential security headers
+    header {
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Health check for reverse proxy
+    handle /caddy-health {
+        respond "OK" 200
+    }
+
+    # Reverse proxy for internal SMS Gateway
+    handle_path /__gateway/* {
+        reverse_proxy smsgw:8025 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Prefix /__gateway
+        }
+    }
+
+    # Streamable MCP routes (disable buffering for realtime event streaming)
+    handle /mcp/* {
+        reverse_proxy app:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            flush_interval -1
+        }
+    }
+
+    # Primary web application, API, and eval dashboard
+    handle {
+        reverse_proxy app:8000 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+}

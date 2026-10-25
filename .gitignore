@@ -28,4 +28,6 @@ dc-briefing.mp3
 Thumbs.db
 .idea/
 .vscode/
+*.zip
+
 *.swp
