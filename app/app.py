@@ -43,13 +43,23 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "sewasetu@123")
 ASSESSOR_USERNAME = os.environ.get("ASSESSOR_USERNAME", "assessor_admin")
 ASSESSOR_PASSWORD = os.environ.get("ASSESSOR_PASSWORD", "Purvanchal@Assess2027")
 
-SMS_GATEWAY_URL = config.get("app", "sms_gateway_url")
-OTP_VALIDITY_SECONDS = config.getint("app", "otp_validity_seconds")
-UPLOAD_DIR = config.get("app", "upload_dir")
-SCHEME_DEADLINE = datetime.strptime(config.get("pension", "scheme_deadline"),
+SMS_GATEWAY_URL = os.environ.get("SMS_GATEWAY_URL", config.get("app", "sms_gateway_url", fallback="http://smsgw:8025"))
+OTP_VALIDITY_SECONDS = int(os.environ.get("OTP_VALIDITY_SECONDS", config.getint("app", "otp_validity_seconds", fallback=300)))
+UPLOAD_DIR = os.environ.get("UPLOAD_DIR", config.get("app", "upload_dir", fallback="/var/sewasetu/uploads"))
+
+def get_upload_dir():
+    global UPLOAD_DIR
+    try:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+    except OSError:
+        UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+    return UPLOAD_DIR
+
+SCHEME_DEADLINE = datetime.strptime(config.get("pension", "scheme_deadline", fallback="2026-10-31 23:59"),
                                     "%Y-%m-%d %H:%M")
-MIN_AGE = config.getint("pension", "min_age")
-SLA_DAYS = config.getint("pension", "sla_days")
+MIN_AGE = int(os.environ.get("MIN_AGE", config.getint("pension", "min_age", fallback=60)))
+SLA_DAYS = int(os.environ.get("SLA_DAYS", config.getint("pension", "sla_days", fallback=15)))
 
 BLOCKS = ["Sonari", "Rajapara", "Dhemaji Pathar", "Borgaon", "Namti", "Khelua"]
 
@@ -222,18 +232,19 @@ def upload():
     if request.method == "POST":
         f = request.files.get("document")
         if f is None or f.filename == "":
-            flash("ERR_VAL_47")
+            flash("Please select a document to upload.")
             return render_template("upload.html")
         filename = f.filename.lower()
         content = f.read()
-        if not filename.endswith(".pdf"):
-            flash("ERR_VAL_47")
+        valid_extensions = (".pdf", ".jpg", ".jpeg", ".png")
+        if not any(filename.endswith(ext) for ext in valid_extensions):
+            flash("Invalid file format. Please upload a PDF or JPG document.")
             return render_template("upload.html")
-        if len(content) > 102400:
-            flash("ERR_VAL_47")
+        if len(content) > 5 * 1024 * 1024:
+            flash("File size exceeds the 5 MB limit. Please upload a smaller file.")
             return render_template("upload.html")
-        os.makedirs(UPLOAD_DIR, exist_ok=True)
-        path = os.path.join(UPLOAD_DIR, "%s_%s" % (session["verified_mobile"], filename))
+        upload_path = get_upload_dir()
+        path = os.path.join(upload_path, "%s_%s" % (session["verified_mobile"], os.path.basename(filename)))
         with open(path, "wb") as out:
             out.write(content)
         session["doc_path"] = path
@@ -252,7 +263,6 @@ def declaration():
 
 
 def handle_submission():
-    # TODO: split this up some day. It grew. - RK, 09/2024
     mobile = session.get("verified_mobile")
     data = session.get("form_data", {})
     doc_path = session.get("doc_path", "")
@@ -262,31 +272,35 @@ def handle_submission():
     block = data.get("block", "").strip()
     gender = data.get("gender", "")
     marital = data.get("marital_status", "")
-    husband_name = data.get("husband_name", "")
-    husband_employer = data.get("husband_employer", "")
+    husband_name = data.get("husband_name", "").strip()
+    husband_employer = data.get("husband_employer", "").strip()
     bank_account = data.get("bank_account", "").strip()
     ifsc = data.get("ifsc", "").strip().upper()
     dob_raw = data.get("dob", "").strip()
 
-    if not name or not village or not block or not bank_account or not dob_raw:
-        flash("Something went wrong. Please try again.")
+    if not name:
+        flash("Applicant name is required.")
+        return redirect(url_for("form_step", step=1))
+    if not village or not block:
+        flash("Village and Block details are required.")
+        return redirect(url_for("form_step", step=2))
+    if not bank_account or not ifsc:
+        flash("Valid bank account number and IFSC are required.")
+        return redirect(url_for("form_step", step=3))
+    if not dob_raw:
+        flash("Date of Birth is required.")
         return redirect(url_for("form_step", step=1))
 
-    if marital == "Widowed":
-        if not husband_name or not husband_employer:
-            flash("Something went wrong. Please try again.")
-            return redirect(url_for("form_step", step=1))
-
-    # lenient date parsing to reduce rejections (CR-2024-117)
+    # Tolerant date parsing prioritizing Indian format DD/MM/YYYY and ISO YYYY-MM-DD
     dob = None
-    for fmt in ("%m/%d/%Y", "%d/%m/%Y"):
+    for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y"):
         try:
             dob = datetime.strptime(dob_raw, fmt).date()
             break
         except ValueError:
             continue
     if dob is None:
-        flash("Something went wrong. Please try again.")
+        flash("Invalid Date of Birth format. Please enter as DD/MM/YYYY or YYYY-MM-DD.")
         return redirect(url_for("form_step", step=1))
 
     today = date.today()
@@ -332,7 +346,7 @@ def handle_submission():
 
     app.logger.info("generating acknowledgment pdf application=%d" % new_id)
     pdf_bytes = generate_acknowledgment(cur, new_id)
-    ack_dir = os.path.join(UPLOAD_DIR, "ack")
+    ack_dir = os.path.join(get_upload_dir(), "ack")
     os.makedirs(ack_dir, exist_ok=True)
     with open(os.path.join(ack_dir, "%d.pdf" % new_id), "wb") as out:
         out.write(pdf_bytes)
@@ -468,7 +482,7 @@ def ack_pdf(app_id):
         cur.close(); conn.close()
         abort(403)
 
-    path = os.path.join(UPLOAD_DIR, "ack", "%d.pdf" % app_id)
+    path = os.path.join(get_upload_dir(), "ack", "%d.pdf" % app_id)
     if not os.path.exists(path):
         data = generate_acknowledgment(cur, app_id)
         cur.close(); conn.close()
