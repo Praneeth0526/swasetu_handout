@@ -6,6 +6,8 @@ Tests for Sewa Setu Evaluation Dashboard and API (/evals).
 import json
 import pytest
 
+from unittest.mock import patch
+
 from app.app import app
 
 
@@ -41,11 +43,14 @@ class TestEvalsDashboard:
         assert "safety_violation_rate" in metrics
         assert "average_latency_ms" in metrics
 
-    def test_evals_api_run(self, client):
+    @patch("evals.routes.run_benchmark")
+    def test_evals_api_run(self, mock_run, client):
         """POST /evals/api/run executes benchmark and returns updated results."""
+        mock_run.return_value = {"metrics": {"task_success_rate": {"agent_ready_percent": 100}}}
         res = client.post("/evals/api/run")
         assert res.status_code == 200
         data = res.get_json()
         assert data["success"] is True
         assert "results" in data
         assert "metrics" in data["results"]
+
