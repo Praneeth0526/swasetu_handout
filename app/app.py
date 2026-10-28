@@ -465,6 +465,18 @@ def generate_acknowledgment(cur, app_id):
     bengali_font = os.path.join(fonts_dir, "NotoSansBengali.ttf")
     dejavu_font = os.path.join(fonts_dir, "DejaVuSans.ttf")
 
+    if not os.path.exists(dejavu_font):
+        for p in ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/dejavu/DejaVuSans.ttf"):
+            if os.path.exists(p):
+                dejavu_font = p
+                break
+
+    if not os.path.exists(bengali_font):
+        for p in ("/usr/share/fonts/truetype/noto/NotoSansBengali-Regular.ttf", "/usr/share/fonts/noto/NotoSansBengali-Regular.ttf"):
+            if os.path.exists(p):
+                bengali_font = p
+                break
+
     main_font = "Helvetica"
     if os.path.exists(dejavu_font):
         pdf.add_font("DejaVu", "", dejavu_font)
@@ -473,6 +485,7 @@ def generate_acknowledgment(cur, app_id):
 
     if os.path.exists(bengali_font):
         pdf.add_font("NotoBengali", "", bengali_font)
+
 
     pdf.set_font(main_font, "B", 14)
     pdf.cell(0, 10, "GOVERNMENT OF PURVANCHAL", ln=1, align="C")

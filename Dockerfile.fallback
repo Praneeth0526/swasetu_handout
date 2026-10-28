@@ -4,11 +4,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV PORT=7860
 
-# Install PostgreSQL, curl, procps, and required tools
+# Install PostgreSQL, curl, procps, Unicode fonts, and required tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
     postgresql postgresql-contrib \
     curl procps ca-certificates tar \
-    && rm -rf /var/lib/apt/lists/*
+    fonts-dejavu-core fonts-noto-bengali fonts-noto-core \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /app/fonts \
+    && (cp -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf /app/fonts/DejaVuSans.ttf 2>/dev/null || \
+        curl -fsSL -o /app/fonts/DejaVuSans.ttf "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/resources/DejaVuSans.ttf") \
+    && (cp -f /usr/share/fonts/truetype/noto/NotoSansBengali*.ttf /app/fonts/NotoSansBengali.ttf 2>/dev/null || \
+        curl -fsSL -o /app/fonts/NotoSansBengali.ttf "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansBengali/NotoSansBengali-Regular.ttf")
 
 # Install official static Caddy binary
 RUN curl -sSL -o /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.tar.gz" \

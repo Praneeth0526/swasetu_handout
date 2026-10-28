@@ -1,0 +1,45 @@
+FROM python:3.11-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PORT=7860
+
+# Install PostgreSQL, curl, procps, Unicode fonts, and required tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    postgresql postgresql-contrib \
+    curl procps ca-certificates tar \
+    fonts-dejavu-core fonts-noto-bengali fonts-noto-core \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /app/fonts \
+    && (cp -f /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf /app/fonts/DejaVuSans.ttf 2>/dev/null || \
+        curl -fsSL -o /app/fonts/DejaVuSans.ttf "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/resources/DejaVuSans.ttf") \
+    && (cp -f /usr/share/fonts/truetype/noto/NotoSansBengali*.ttf /app/fonts/NotoSansBengali.ttf 2>/dev/null || \
+        curl -fsSL -o /app/fonts/NotoSansBengali.ttf "https://github.com/googlefonts/noto-fonts/raw/main/hinted/ttf/NotoSansBengali/NotoSansBengali-Regular.ttf")
+
+# Install official static Caddy binary
+RUN curl -sSL -o /tmp/caddy.tar.gz "https://github.com/caddyserver/caddy/releases/download/v2.8.4/caddy_2.8.4_linux_amd64.tar.gz" \
+    && tar -xzf /tmp/caddy.tar.gz -C /usr/local/bin caddy \
+    && rm -f /tmp/caddy.tar.gz \
+    && chmod +x /usr/local/bin/caddy
+
+# Set up workdirs and python dependencies
+WORKDIR /app
+COPY app/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt \
+    && pip install --no-cache-dir Flask==2.2.5 gunicorn==20.1.0
+
+# Copy applications and scripts
+COPY app/ /app/
+COPY smsgw/ /smsgw/
+COPY deploy/ /deploy/
+COPY seed/ /seed/
+COPY evals/ /evals/
+
+# Ensure directory permissions and paths
+RUN mkdir -p /var/sewasetu/uploads /var/log/sewasetu /var/lib/postgresql/data /var/run/postgresql \
+    && chown -R postgres:postgres /var/lib/postgresql /var/run/postgresql \
+    && chmod +x /deploy/fallback-entrypoint.sh /deploy/init-db.sh
+
+EXPOSE 7860
+
+ENTRYPOINT ["/deploy/fallback-entrypoint.sh"]

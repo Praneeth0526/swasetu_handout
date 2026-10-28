@@ -1,3 +1,12 @@
+---
+title: Sewa Setu
+emoji: 🏛️
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+---
+
 # Sewa Setu — Agent-Ready Senior Citizen Pension Portal
 
 [![Build for Bharat Fellowship 2027](https://img.shields.io/badge/Build_for_Bharat-2027_AI_Track-0b3d6e.svg)](https://github.com/harshnisar)
