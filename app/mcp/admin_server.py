@@ -32,7 +32,10 @@ def get_admin_creds():
     assessor_pwd = getattr(helpers, "ASSESSOR_PASSWORD", "Purvanchal@Assess2027")
     return admin_pwd, assessor_pwd
 
-from app.scripts.deemed_approval import process_deemed_approvals
+try:
+    from app.scripts.deemed_approval import process_deemed_approvals
+except (ImportError, ModuleNotFoundError):
+    from scripts.deemed_approval import process_deemed_approvals
 
 ADMIN_TOOLS = [
     {

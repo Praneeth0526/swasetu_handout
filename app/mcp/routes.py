@@ -7,8 +7,12 @@ Exposes Streamable HTTP transports for Citizen and Admin MCP servers.
 import json
 from flask import Blueprint, request, jsonify, Response, stream_with_context
 
-from app.mcp.citizen_server import process_citizen_mcp_request, CITIZEN_TOOLS
-from app.mcp.admin_server import process_admin_mcp_request, verify_admin_token, ADMIN_TOOLS
+try:
+    from app.mcp.citizen_server import process_citizen_mcp_request, CITIZEN_TOOLS
+    from app.mcp.admin_server import process_admin_mcp_request, verify_admin_token, ADMIN_TOOLS
+except (ImportError, ModuleNotFoundError):
+    from mcp.citizen_server import process_citizen_mcp_request, CITIZEN_TOOLS
+    from mcp.admin_server import process_admin_mcp_request, verify_admin_token, ADMIN_TOOLS
 
 mcp_bp = Blueprint("mcp", __name__, url_prefix="/mcp")
 
