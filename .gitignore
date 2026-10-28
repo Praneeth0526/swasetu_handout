@@ -18,10 +18,10 @@ uploads/
 app/uploads/
 
 # Large Handout Data (Explicitly permitted to exclude per BRIEF.md:53-54)
-seed/seed.sql
-logs/*.tar.gz
-logs/extracted/
+seed/
+logs/
 dc-briefing.mp3
+*.tar.gz
 
 # IDE & OS
 .DS_Store
