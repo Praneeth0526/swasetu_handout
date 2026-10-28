@@ -146,30 +146,37 @@ Visit `/evals` in any browser to inspect side-by-side traces, or trigger a live 
 
 ## 6. Quickstart & Deployment
 
-### Track A: Multi-Container Docker Compose (Local / Cloud VM)
-```bash
-# 1. Clone repository
-git clone <repo_url> && cd sewasetu-handout
+### Track A: Local Server + Cloudflare Tunneling (Primary Production Deployment)
+Exposes the local home server / workstation deployment to the public internet with zero port forwarding, free Cloudflare edge DDoS mitigation, and automatic HTTPS:
 
-# 2. Copy environment template
+```bash
+# 1. Copy environment template
 cp .env.example .env
 
-# 3. Launch stack
+# Optional: Add CLOUDFLARE_TUNNEL_TOKEN=<token> to .env for a custom domain,
+# or leave blank for an automatic zero-config Quick Tunnel (*.trycloudflare.com).
+
+# 2. Launch production stack with Cloudflare Tunnel
 docker compose up -d --build
 
-# 4. Run test suite
+# 3. Retrieve your public HTTPS endpoint
+./get_tunnel_url.sh
+
+# 4. Verify database restored the full 100,000 records
+docker compose exec db psql -U sewasetu -d sewasetu -c "SELECT count(*) FROM applications;"
+
+# 5. Run test suite inside container
 docker compose exec app pytest /tests
 ```
 
 ### Track B: Hugging Face Spaces Single-Container (`Dockerfile.fallback`)
-Specifically configured for zero-cost public hosting on Hugging Face Spaces (Port 7860):
-1. Create a new Hugging Face Docker Space.
-2. In Space repository, use `Dockerfile.fallback` as the root `Dockerfile`:
+Configured for zero-cost cloud container hosting on Hugging Face Spaces (Port 7860):
+1. Create a new Hugging Face Docker Space (`https://huggingface.co/new-space`).
+2. Push the pre-configured `hf-deploy` branch directly to the Space:
    ```bash
-   cp Dockerfile.fallback Dockerfile
-   git add Dockerfile && git commit -m "deploy: configure Hugging Face Spaces" && git push
+   git push hf hf-deploy:main --force
    ```
-3. The container boots PostgreSQL, loads seed data at boot, starts SMS gateway, background worker, Gunicorn portal, and Caddy reverse proxy on port 7860.
+3. Space boots unified container with PostgreSQL, SMS gateway, worker, and Caddy reverse proxy on port 7860.
 
 ---
 

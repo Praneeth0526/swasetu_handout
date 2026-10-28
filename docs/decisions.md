@@ -54,12 +54,16 @@ This log records major engineering decisions, trade-offs, and rationale for the 
 
 ---
 
-## ADR-005: Dual-Track Deployment Topology (Compose + Caddy & Fallback Single Container)
+## ADR-005: Deployment Topology — Local Server + Cloudflare Tunneling & Fallback Container
 
-* **Date:** 2026-10-25
-* **Context:** The live deployment must remain accessible for ~30 days. The target hosting includes Hugging Face Spaces (which runs Docker spaces on port 7860 as a single container) or a multi-container VPS setup.
+* **Date:** 2026-10-25 (Updated 2026-10-28)
+* **Context:** The live deployment must remain accessible for ~30 days for automated assessor probes. The deployment needs to host the full ~100,000-record PostgreSQL dataset (`seed/seed.sql`), support unbuffered SSE streaming for MCP sessions, and provide high uptime without free-tier cloud storage/memory throttling or binary file rejection.
 * **Decision:**
-  - Build a dual deployment structure:
-    1. **Multi-Container Production (`deploy/`)**: Docker Compose orchestrating `app` (Flask), `db` (Postgres 15), `smsgw` (SMS gateway), `worker` (RTPS job), and `caddy` (automatic HTTPS, reverse proxy, routing to `/`, `/__gateway/`, `/mcp/citizen`, `/mcp/admin`, `/evals/`).
-    2. **Single-Container Fallback (`Dockerfile.fallback`)**: Self-contained image running Postgres, Flask app, SMS gateway, worker, and MCP/evals under a unified entrypoint on port 7860 with seed-at-boot. Tailor-made for Hugging Face Spaces free-tier hosting.
-  - Added Werkzeug `ProxyFix` middleware and `/health` endpoints on all services for reverse proxy transparent path-prefixing (`X-Forwarded-Prefix`, `X-Forwarded-Proto`).
+  - **Primary Track (Local Server + Cloudflare Tunneling)**:
+    - Docker Compose orchestrates `app` (Flask Gunicorn), `db` (PostgreSQL 15-alpine), `smsgw` (SMS gateway), `worker` (periodic RTPS sweep daemon), `caddy` (internal reverse proxy with unbuffered SSE streaming on `/mcp/*`), and `tunnel` (`cloudflare/cloudflared:latest`).
+    - Cloudflare Tunnel connects the local Caddy reverse proxy to the Cloudflare global edge network. This eliminates the need for a static public IP, router port forwarding, or DDNS, while providing free DDoS mitigation, SSL/TLS termination, and instant public HTTPS.
+    - Supports both zero-config Quick Tunnels (`*.trycloudflare.com`) and permanent Named Tunnels via `CLOUDFLARE_TUNNEL_TOKEN`.
+    - Local server compute and storage cleanly handle the full 25MB seed SQL dataset and high concurrency connection pooling without memory exhaustion.
+  - **Secondary Track (Single-Container Hugging Face Spaces)**:
+    - `Dockerfile.fallback` builds an all-in-one container running PostgreSQL, Flask app, SMS gateway, worker, and Caddy reverse proxy on port 7860 with seed-at-boot for cloud backup hosting.
+  - Werkzeug `ProxyFix` middleware and `/health` endpoints ensure all services seamlessly support reverse proxying, headers (`X-Forwarded-Proto`, `X-Forwarded-For`), and path-prefixing.

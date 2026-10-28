@@ -216,36 +216,49 @@ Visit `http://localhost/evals` (or your public deployment URL `/evals`) in any w
 
 ## 8. Deployment Topologies
 
-### Option A: Multi-Container Production (Docker Compose)
-Recommended for local evaluation, VM instances, AWS EC2, or DigitalOcean:
-```bash
-# 1. Clone repository
-git clone <repo_url> sewasetu && cd sewasetu
+### Option A: Local Server with Cloudflare Tunneling (Primary Production Deployment)
+Recommended for hosting on local home server / workstation or VPS with zero public IP configuration, zero port-forwarding, and full local compute/storage capacity:
 
-# 2. Setup environment variables
+```bash
+# 1. Setup environment variables
 cp .env.example .env
 
-# 3. Start stack
+# Optional: If you have a Cloudflare Named Tunnel token and custom domain:
+# Add CLOUDFLARE_TUNNEL_TOKEN=<your_token> to .env
+# Otherwise, leave blank to use the automatic zero-config Quick Tunnel (*.trycloudflare.com).
+
+# 2. Start the full stack with Cloudflare Tunnel
 docker compose up -d --build
 
-# 4. Run tests in container
+# 3. Retrieve your public HTTPS URL
+./get_tunnel_url.sh
+# or inspect tunnel logs:
+# docker compose logs tunnel | grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com"
+
+# 4. Verify database restored the full 100,000 records
+docker compose exec db psql -U sewasetu -d sewasetu -c "SELECT count(*) FROM applications;"
+
+# 5. Run test suite inside the container
 docker compose exec app pytest /tests
 ```
 
+**Key Advantages of Local Server + Cloudflare Tunnel:**
+- **Full Database Scale**: Accommodates the entire ~100,000 record dataset (`seed/seed.sql`) without third-party RAM or disk constraints.
+- **Enterprise Edge Security**: Free Cloudflare DDoS mitigation, automatic edge TLS certificate termination, and low-latency worldwide routing.
+- **SSE & WebSocket Streaming**: Direct unbuffered streaming for streamable MCP sessions (`/mcp/citizen` and `/mcp/admin`).
+- **30-Day Evaluation Resilience**: Keeps the portal continuously accessible to automated evaluators without container sleep timeouts.
+
+---
+
 ### Option B: Hugging Face Spaces Single-Container (`Dockerfile.fallback`)
-Designed specifically for zero-cost, persistent public deployment on Hugging Face Spaces:
+Designed for zero-cost cloud container hosting on Hugging Face Spaces (Port 7860):
 1. Create a new Space on Hugging Face (`https://huggingface.co/new-space`).
 2. Select **Docker** as Space SDK.
-3. In Space Settings, set:
-   - `PORT`: `7860` (Default)
-4. Push repository files to Space repository.
-5. In root of Space, ensure `Dockerfile` references or is copied from `Dockerfile.fallback`:
+3. Push repository files to the Space git remote:
    ```bash
-   cp Dockerfile.fallback Dockerfile
-   git add Dockerfile && git commit -m "deploy: configure Hugging Face Spaces Dockerfile" && git push
+   git push hf hf-deploy:main --force
    ```
-6. Hugging Face Spaces boots all services (PostgreSQL, seed data, SMS gateway, worker, Gunicorn app, and Caddy reverse proxy) in a single container exposed on port 7860.
-7. Access public URLs:
+4. Access public endpoints:
    - Portal: `https://<user>-<space>.hf.space/`
    - Citizen MCP: `https://<user>-<space>.hf.space/mcp/citizen`
    - Admin MCP: `https://<user>-<space>.hf.space/mcp/admin`

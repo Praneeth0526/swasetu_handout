@@ -101,6 +101,25 @@ services:
       app:
         condition: service_healthy
 
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -n "$$TUNNEL_TOKEN" ]; then
+          echo "Starting Cloudflare Named Tunnel with configured token..."
+          exec cloudflared tunnel --no-autoupdate run --token "$$TUNNEL_TOKEN"
+        else
+          echo "Starting Cloudflare Quick Tunnel (auto-generated public HTTPS URL)..."
+          exec cloudflared tunnel --no-autoupdate --url http://caddy:80
+        fi
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - caddy
+
+
 volumes:
   pgdata:
   uploads:
